@@ -19,13 +19,23 @@ def repo_dir_name(url, branch):
     return f"{org}_{name}_{safe_branch}"
 
 
-def clone_or_update(repo_url, branch, base_dir):
+def inject_token(url, token):
+    if url.startswith("https://"):
+        return url.replace("https://", f"https://x-access-token:{token}@", 1)
+    if url.startswith("http://"):
+        return url.replace("http://", f"http://x-access-token:{token}@", 1)
+    return url
+
+
+def clone_or_update(repo_url, branch, base_dir, token):
+    auth_url = inject_token(repo_url, token)
     dest = os.path.join(base_dir, repo_dir_name(repo_url, branch))
 
     if os.path.isdir(dest):
         result = subprocess.run(
             ["git", "-C", dest, "fetch", "--depth", "1", "origin", branch],
             capture_output=True, text=True,
+            env={**os.environ, "GIT_ASKPASS": "echo", "GIT_TERMINAL_PROMPT": "0"},
         )
         if result.returncode != 0:
             return repo_url, False, f"fetch failed: {result.stderr.strip()}"
@@ -38,11 +48,16 @@ def clone_or_update(repo_url, branch, base_dir):
         return repo_url, True, "updated"
 
     result = subprocess.run(
-        ["git", "clone", "--depth", "1", "--single-branch", "--branch", branch, repo_url, dest],
+        ["git", "clone", "--depth", "1", "--single-branch", "--branch", branch, auth_url, dest],
         capture_output=True, text=True,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )
     if result.returncode != 0:
         return repo_url, False, f"clone failed: {result.stderr.strip()}"
+    subprocess.run(
+        ["git", "-C", dest, "remote", "set-url", "origin", repo_url],
+        capture_output=True, text=True,
+    )
     return repo_url, True, "cloned"
 
 
@@ -65,6 +80,7 @@ def main():
     parser.add_argument("--dest", default="repos", help="Base directory for clones (default: repos)")
     parser.add_argument("--workers", type=int, default=16, help="Parallel workers (default: 16)")
     parser.add_argument("--default-branch", default="prod", help="Branch when not specified (default: prod)")
+    parser.add_argument("--token", required=True, help="GitHub token for private repos")
     args = parser.parse_args()
 
     repos = read_repos(args.file, args.default_branch)
@@ -75,7 +91,7 @@ def main():
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
-            pool.submit(clone_or_update, url, branch, args.dest): url
+            pool.submit(clone_or_update, url, branch, args.dest, args.token): url
             for url, branch in repos
         }
         for i, future in enumerate(as_completed(futures), 1):
