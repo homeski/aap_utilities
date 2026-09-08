@@ -30,7 +30,11 @@ def get_all_projects(base_url, session, verify_ssl=True, page_size=50):
         data = resp.json()
         projects.extend(data["results"])
         # print(f"Fetched {len(projects)}/{data['count']} projects...")
-        url = data.get("next")
+        next_url = data.get("next")
+        if next_url:
+            url = base_url + next_url
+        else:
+            url = None
 
     return projects
 
