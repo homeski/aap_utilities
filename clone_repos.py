@@ -33,14 +33,14 @@ def clone_or_update(repo_url, branch, base_dir, token):
 
     if os.path.isdir(dest):
         result = subprocess.run(
-            ["git", "-C", dest, "fetch", "--depth", "1", "origin", branch],
+            ["git", "-C", dest, "fetch", "--depth", "1", auth_url, branch],
             capture_output=True, text=True,
-            env={**os.environ, "GIT_ASKPASS": "echo", "GIT_TERMINAL_PROMPT": "0"},
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
         if result.returncode != 0:
             return repo_url, False, f"fetch failed: {result.stderr.strip()}"
         result = subprocess.run(
-            ["git", "-C", dest, "checkout", f"origin/{branch}"],
+            ["git", "-C", dest, "checkout", "FETCH_HEAD"],
             capture_output=True, text=True,
         )
         if result.returncode != 0:
